@@ -66,9 +66,7 @@ Call it right after checkout, before dependency caches are restored:
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached (`setsid` + `disown`), so they continue after the step ends; output goes to
-`docker-pull-<image>.log` in the working directory. Missing paths and Dockerfiles without usable images
-are skipped; if nothing is found the action is a no-op. See [`examples/maven/.github/workflows/ci.yml`](examples/maven/.github/workflows/ci.yml).
+Pulls run detached - they continue after the step ends.
 
 ## Java library
 
@@ -162,8 +160,3 @@ updates:
 
 See [`examples/maven/.github/dependabot.yaml`](examples/maven/.github/dependabot.yaml).
 
-## Development
-
-```bash
-cd java && mvn test
-```
