@@ -1,0 +1,51 @@
+version: 2
+updates:
+  # Maven: root pom and the example
+  - package-ecosystem: "maven"
+    directories:
+      - "/"
+      - "/examples/maven"
+    cooldown:
+      default-days: 7
+      exclude:
+        - "no.entur*"
+        - "org.entur*"
+    groups:
+      entur-dependencies:
+        patterns:
+          - "no.entur*"
+          - "org.entur*"
+        update-types:
+          - "patch"
+          - "minor"
+    schedule:
+      interval: "daily"
+
+  # GitHub Actions used by the workflows and by the composite action itself
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/pre-pull-docker-images"
+    cooldown:
+      default-days: 7
+    ignore:
+      # Entur's own reusable workflows are pinned deliberately.
+      - dependency-name: "entur/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+    schedule:
+      interval: "daily"
+
+  # Docker images used by the library's own tests (and shown as an example)
+  - package-ecosystem: "docker"
+    directories:
+      - "/java/src/test/resources/testcontainers"
+      - "/java/src/test/resources/docker"
+      - "/examples/maven/src/test/resources/testcontainers"
+    cooldown:
+      default-days: 7
+    groups:
+      testcontainers:
+        patterns:
+          - "*"
+    schedule:
+      interval: "daily"

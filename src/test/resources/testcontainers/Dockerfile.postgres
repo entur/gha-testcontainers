@@ -1,0 +1,2 @@
+# pinned
+FROM postgres@sha256:abc

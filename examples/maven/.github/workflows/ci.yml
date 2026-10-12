@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: the build only needs to read the repository.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # 1. Start pulling the Testcontainers images in the background, right after checkout...
+      - name: Pre-pull Testcontainers images
+        uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1 # pin to a commit SHA in real use
+        with:
+          dockerfile-paths: src/test/resources/testcontainers
+          # Optional login (Docker Hub by default) to avoid anonymous rate limits.
+          # Prefer a read-only pull token. For another registry, also set "registry: ghcr.io".
+          # registry-login: ${{ secrets.REGISTRY_LOGIN }}
+          # registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      # 2. ...while Java is set up and the Maven cache restored.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # 3. By the time the integration tests start, the images are (mostly) already local.
+      - run: mvn -B verify

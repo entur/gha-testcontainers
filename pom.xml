@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>no.entur.testcontainers</groupId>
+	<artifactId>dockerfile-helper</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<name>Dockerfile-helper</name>
+	<description>Resolve Docker image names (e.g. for Testcontainers) from the FROM line of Dockerfiles on the classpath.</description>
+	<url>https://github.com/entur/gha-testcontainers</url>
+
+	<organization>
+		<name>Entur AS</name>
+		<url>https://www.entur.org/</url>
+	</organization>
+
+	<licenses>
+		<license>
+			<name>EUPL-1.2</name>
+			<url>https://joinup.ec.europa.eu/software/page/eupl</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+
+	<developers>
+		<developer>
+			<name>Thomas Skjølberg</name>
+			<organization>Entur</organization>
+			<organizationUrl>https://www.entur.org</organizationUrl>
+		</developer>
+	</developers>
+
+	<scm>
+		<connection>scm:git:ssh://git@github.com/entur/gha-testcontainers.git</connection>
+		<developerConnection>scm:git:ssh://git@github.com/entur/gha-testcontainers.git</developerConnection>
+		<url>https://github.com/entur/gha-testcontainers/tree/main</url>
+		<tag>HEAD</tag>
+	</scm>
+
+	<properties>
+		<junit.version>5.13.4</junit.version>
+		<jreleaser-maven-plugin.version>1.26.0</jreleaser-maven-plugin.version>
+		<maven-deploy-plugin.version>3.2.0</maven-deploy-plugin.version>
+		<maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+		<maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+		<maven.compiler.release>17</maven.compiler.release>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-deploy-plugin</artifactId>
+					<version>${maven-deploy-plugin.version}</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<plugins>
+			<plugin>
+				<groupId>org.jreleaser</groupId>
+				<artifactId>jreleaser-maven-plugin</artifactId>
+				<version>${jreleaser-maven-plugin.version}</version>
+				<configuration>
+					<jreleaser>
+						<signing>
+							<active>ALWAYS</active>
+							<armored>true</armored>
+						</signing>
+						<deploy>
+							<maven>
+								<mavenCentral>
+									<sonatype>
+										<active>RELEASE</active>
+										<url>https://central.sonatype.com/api/v1/publisher</url>
+										<stagingRepositories>target/staging-deploy</stagingRepositories>
+									</sonatype>
+								</mavenCentral>
+								<nexus2>
+									<maven-central>
+										<active>SNAPSHOT</active>
+										<url>https://ossrh-staging-api.central.sonatype.com/service/local</url>
+										<snapshotUrl>https://central.sonatype.com/repository/maven-snapshots</snapshotUrl>
+										<applyMavenCentralRules>true</applyMavenCentralRules>
+										<snapshotSupported>true</snapshotSupported>
+										<closeRepository>true</closeRepository>
+										<releaseRepository>true</releaseRepository>
+										<stagingRepositories>target/staging-deploy</stagingRepositories>
+									</maven-central>
+								</nexus2>
+							</maven>
+						</deploy>
+						<release>
+							<github>
+								<skipTag>false</skipTag>
+								<skipRelease>false</skipRelease>
+							</github>
+						</release>
+					</jreleaser>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
+
+	<profiles>
+		<profile>
+			<id>publication</id>
+			<properties>
+				<altDeploymentRepository>local::file:${maven.multiModuleProjectDirectory}/target/staging-deploy</altDeploymentRepository>
+			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>${maven-source-plugin.version}</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<version>${maven-javadoc-plugin.version}</version>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
+</project>

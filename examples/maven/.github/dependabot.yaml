@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # Bumps the images in src/test/resources/testcontainers/Dockerfile.*
+  - package-ecosystem: "docker"
+    directory: "/src/test/resources/testcontainers" # not recursive: one entry per directory
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+    groups:
+      testcontainers:
+        patterns:
+          - "*"
+    # Keep an image deliberately pinned:
+    # ignore:
+    #   - dependency-name: "redis"
+
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
