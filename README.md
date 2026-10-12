@@ -94,8 +94,9 @@ or the equivalent for Gradle.
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue after the step ends. Pull logs are written to a private, uniquely
-created directory under `$RUNNER_TEMP`; the action prints its path for troubleshooting.
+Pulls run detached - they continue after the step ends. Their output is discarded (`/dev/null`), and
+no Docker pull log files are created. Background pulls are best effort; Testcontainers still reports
+any required pull failures when tests run.
 
 ## Bootstrapping testcontainers in tests
 Add a parser to get the right image into testcontainers. Alternatively write your own.
@@ -155,10 +156,10 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
 - Dockerfile content is treated as **untrusted** (e.g. from a pull request). A stateful character whitelist allows
   letters, digits and `. _ / : - [ ]` in image names/tags, letters, digits and `_ + . -` in digest algorithms,
   and only hexadecimal characters in the digest. References cannot start with an option or contain shell syntax,
-  whitespace or control characters. This is not a full Docker/OCI grammar validator; Docker reports malformed
-  references in the pull logs. Logged values have control characters stripped, the `images` output uses a random
-  delimiter, and images are passed to `docker pull --` so they can never be parsed as options.
+  whitespace or control characters. This is not a full Docker/OCI grammar validator. Logged values have control
+  characters stripped, the `images` output uses a random delimiter, and images are passed to `docker pull --`
+  so they can never be parsed as options.
 - Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
-- Image lists and pull logs are written under `$RUNNER_TEMP`, not into the checkout. Pull logs use a private,
-  uniquely created directory so repository-controlled symlinks cannot redirect them into runner files.
+- The action does not write files into the checkout. Collected image lists are stored under `$RUNNER_TEMP`,
+  and background pull output goes to `/dev/null`, so repository symlinks cannot redirect pull logs into runner files.
 - Pin the action to a commit SHA for supply-chain safety.

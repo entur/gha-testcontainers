@@ -111,9 +111,6 @@ runs:
         REGISTRY_LOGIN: ${{ inputs.registry-login }}
         REGISTRY_PASSWORD: ${{ inputs.registry-password }}
       run: |
-        # The checkout is untrusted; private runner-temp logs cannot follow repository symlinks.
-        logs_dir="$(mktemp -d "${RUNNER_TEMP:?}/docker-pull.XXXXXXXXXX")"
-        echo "Docker pull logs: $logs_dir"
         if [[ -n "$REGISTRY_LOGIN" && -n "$REGISTRY_PASSWORD" ]]; then
           echo "Logging in to ${REGISTRY:-docker.io}"
           echo "$REGISTRY_PASSWORD" | docker login "${REGISTRY:-docker.io}" -u "$REGISTRY_LOGIN" --password-stdin
@@ -122,7 +119,6 @@ runs:
         fi
         while IFS= read -r image; do
           echo "Pre-pulling $image in background"
-          logfile="$logs_dir/docker-pull-$(printf '%s' "$image" | tr -c 'a-zA-Z0-9' '-').log"
-          setsid docker pull -- "$image" > "$logfile" 2>&1 < /dev/null &
+          setsid docker pull -- "$image" > /dev/null 2>&1 < /dev/null &
           disown
         done < "$IMAGES_FILE"

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import re
-import stat
 import subprocess
 import tempfile
 import textwrap
@@ -46,7 +45,7 @@ class PrePullActionTest(unittest.TestCase):
         docker.write_text(
             "#!/usr/bin/env bash\n"
             "printf 'docker %s\\n' \"$*\"\n"
-            "printf 'complete\\n'\n"
+            "printf 'docker diagnostic\\n' >&2\n"
             "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_COMPLETIONS\"\n"
         )
         docker.chmod(0o700)
@@ -171,7 +170,7 @@ class PrePullActionTest(unittest.TestCase):
             time.sleep(0.02)
         self.fail("Background Docker pulls did not complete")
 
-    def test_repository_symlinks_cannot_redirect_logs_and_invocations_are_isolated(self):
+    def test_background_pulls_discard_output_and_do_not_write_logs(self):
         self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
         self.dockerfile("Dockerfile.nginx", "FROM nginx:1.27\n")
         self.collect()
@@ -184,25 +183,18 @@ class PrePullActionTest(unittest.TestCase):
             result = self.run_script(self.pull_script)
             self.wait_for_pulls(invocation * 2)
             self.assertEqual(victim.read_text(), "must stay unchanged\n")
-            logs = list(self.runner_temp.glob("docker-pull.*/*.log"))
-            self.assertEqual(len(logs), invocation * 2)
-            for log in logs:
-                self.assertEqual(log.parent.parent, self.runner_temp)
-                self.assertEqual(stat.S_IMODE(log.parent.stat().st_mode), 0o700)
-                self.assertIn("docker pull -- ", log.read_text())
-                self.assertTrue(log.read_text().endswith("complete\n"))
-            self.assertIn("Docker pull logs:", result.stdout)
-        self.assertEqual(len({log.parent for log in logs}), 2)
-
-    def test_missing_runner_temp_fails_before_pulling(self):
-        self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
-        self.collect()
-        env = self.env.copy()
-        del env["RUNNER_TEMP"]
-        result = self.run_script(self.pull_script, env=env, check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("RUNNER_TEMP", result.stderr)
-        self.assertEqual(list(self.workspace.glob("docker-pull-*.log")), [])
+            self.assertEqual(list(self.runner_temp.iterdir()), [self.images_file])
+            self.assertCountEqual(
+                self.completions.read_text().splitlines(),
+                ["pull -- nginx:1.27", "pull -- redis:7.2"] * invocation,
+            )
+            self.assertEqual(
+                result.stdout,
+                "No registry login.\n"
+                "Pre-pulling nginx:1.27 in background\n"
+                "Pre-pulling redis:7.2 in background\n",
+            )
+            self.assertEqual(result.stderr, "")
 
 
 if __name__ == "__main__":
