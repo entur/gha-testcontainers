@@ -23,7 +23,7 @@ so this can save from **5 to 30 seconds per build**, depending on the number and
 ## Features
 The project has three parts:
 
-- **GitHub Action** – pre-pulls every image found in the Dockerfiles, in the background.
+- **GitHub Action** – pre-pulls the first plain `FROM` image from each simple Dockerfile, in the background.
 - **Java library** – resolves an image name from the `FROM` line of a Dockerfile on the classpath, so test code
   uses exactly the image CI pre-pulled and Dependabot bumped.
 - **Dependabot config example** – Copy-paste ready
@@ -45,7 +45,11 @@ or with digest
 FROM redis@sha256:...
 ```
 
-Only plain `FROM image[:tag|@digest] [AS name]` lines are supported.
+The action reads only the first `FROM` line, in the form `FROM image[:tag][@digest]`.
+It does not build Dockerfiles or support builders/stage aliases (`AS`), flags, build args or inline comments.
+If that line is unsupported, uses `scratch` (case-insensitive), or fails the image-character whitelist,
+the Dockerfile is skipped; later `FROM` lines are not considered. Blank lines and standalone comments are fine.
+The Java parser is more permissive, but both read the same image from simple Dockerfiles.
 
 ## GitHub Action
 
@@ -90,7 +94,9 @@ or the equivalent for Gradle.
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue after the step ends.
+Pulls run detached - they continue after the step ends. Their output is discarded (`/dev/null`), and
+no Docker pull log files are created. Background pulls are best effort; Testcontainers still reports
+any required pull failures when tests run.
 
 ## Bootstrapping testcontainers in tests
 Add a parser to get the right image into testcontainers. Alternatively write your own.
@@ -147,14 +153,13 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
 - Credentials reach the login via environment variables and `--password-stdin` (never on a command line or
   interpolated into the script), and are written to the runner's Docker config for the lifetime of the job, as
   the background pulls need them. Use ephemeral/GitHub-hosted runners, or log out yourself on shared runners.
-- Dockerfile content is treated as **untrusted** (e.g. from a pull request): each image must match the
-  [Docker/OCI reference grammar](https://github.com/distribution/reference/blob/main/reference.go)
-  (`[domain[:port]/]path[:tag][@algorithm:hex]`: lowercase path components, tag of at most 128 characters, digest with
-  at least 32 hex characters, repository name of at most 255 characters), which only permits letters, digits and
-  `. _ - / : @ [ ]` in their defined positions; anything else is ignored. Logged values have control
-  characters stripped (no workflow-command or log-line injection), the `images` output uses a random delimiter,
-  and images are passed to `docker pull --` so they can never be parsed as options.
+- Dockerfile content is treated as **untrusted** (e.g. from a pull request). A stateful character whitelist allows
+  letters, digits and `. _ / : - [ ]` in image names/tags, letters, digits and `_ + . -` in digest algorithms,
+  and only hexadecimal characters in the digest. References cannot start with an option or contain shell syntax,
+  whitespace or control characters. This is not a full Docker/OCI grammar validator. Logged values have control
+  characters stripped, the `images` output uses a random delimiter, and images are passed to `docker pull --`
+  so they can never be parsed as options.
 - Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
-- The action does not read secrets, make network calls other than `docker pull`/`docker login`, or write outside
-  `$RUNNER_TEMP` and the working directory (pull logs).
+- The action does not write files into the checkout. Collected image lists are stored under `$RUNNER_TEMP`,
+  and background pull output goes to `/dev/null`, so repository symlinks cannot redirect pull logs into runner files.
 - Pin the action to a commit SHA for supply-chain safety.

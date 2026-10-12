@@ -1,9 +1,9 @@
 name: "Pre-pull Docker images in background"
 description: >-
   Kicks off a background `docker pull` (detached with setsid + disown, so the pulls keep running on the
-  runner after this step's shell exits) for the base image of every Dockerfile (files named "Dockerfile*")
+  runner after this step's shell exits) for the first base image of every simple Dockerfile (files named "Dockerfile*")
   found under the given paths, e.g. one Dockerfile per Testcontainers image used by integration tests.
-  Only plain "FROM image[:tag] [AS name]" lines are supported. Keeping the images in Dockerfiles lets
+  Only plain "FROM image[:tag][@digest]" lines are supported, without build stages. Keeping the images in Dockerfiles lets
   Dependabot/Renovate keep them up to date and lets test code read the very same files as its single source
   of truth. Call this action right after checkout - before the dependency-cache restore - so the download
   overlaps with dependency resolution/compilation instead of blocking whichever integration test first
@@ -13,8 +13,8 @@ inputs:
   dockerfile-paths:
     description: >-
       Whitespace/newline-separated list of paths (relative to repo root) to search recursively for files named
-      "Dockerfile*". The image of each "FROM image[:tag] [AS name]" line is pre-pulled. Lines using
-      flags (e.g. --platform), build args ($VAR), "scratch" or references to earlier build stages are ignored.
+      "Dockerfile*". Only the first FROM line is read, in the form "FROM image[:tag][@digest]".
+      Dockerfiles using flags, build args, "scratch" or stage aliases on that line are skipped.
     required: true
   registry:
     description: "Registry address to log in to, e.g. ghcr.io or myregistry.jfrog.io. Defaults to Docker Hub (docker.io). Only used if both registry-login and registry-password are set."
@@ -43,28 +43,25 @@ runs:
         images_file="${RUNNER_TEMP:-/tmp}/pre-pull-docker-images.txt"
         : > "$images_file"
 
-        # Dockerfile content and paths are untrusted (e.g. from a pull request). Everything that is logged is
-        # stripped of control characters so it cannot start a workflow command ("::...") or forge log lines.
+        # Strip control characters from untrusted content before logging it.
         clean() { printf '%s' "$1" | tr -d '\000-\037\177'; }
-        # Strict whitelist: an image must match the Docker/OCI reference grammar
-        # (https://github.com/distribution/reference/blob/main/reference.go):
-        #   reference := [domain '/'] path [':' tag] ['@' digest]
-        # which only allows letters, digits and . _ - / : @ [ ] in their defined positions (lowercase path, tag max
-        # 128 chars, digest "algorithm:hex" with at least 32 hex chars, repository name max 255 chars). This also
-        # rules out a leading "-" (docker option) and anything that could break the $GITHUB_OUTPUT format.
+        # Whitelist characters by reference state; Docker validates the full reference grammar.
         valid_image() {
-          local LC_ALL=C ref="$1"
-          local alnum='[a-z0-9]+' sep='([._]|__|-+)' dcomp='([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])'
-          local pcomp="$alnum($sep$alnum)*"
-          local path="$pcomp(/$pcomp)*"
-          local domain="($dcomp(\\.$dcomp)*|\\[[a-fA-F0-9:]+\\])(:[0-9]+)?"
-          local tag='[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}'
-          local digest='[A-Za-z][A-Za-z0-9]*([-_+.][A-Za-z][A-Za-z0-9]*)*:[[:xdigit:]]{32,}'
-          [[ "$ref" =~ ^($domain/)?$path(:$tag)?(@$digest)?$ ]] || return 1
-          # repository name = reference without digest and tag
-          local name="${ref%%@*}"
-          [[ "${name##*/}" == *:* ]] && name="${name%:*}"
-          [ ${#name} -le 255 ]
+          local LC_ALL=C ref="$1" state=name char i
+          [[ "$ref" == [a-zA-Z0-9]* || "$ref" == \[* ]] || return 1
+          [[ "$ref" != *[:/@] ]] || return 1
+          for ((i = 0; i < ${#ref}; i++)); do
+            char="${ref:i:1}"
+            case "$state:$char" in
+              name:[a-zA-Z0-9._/:-]|name:\[|name:\]) ;;
+              name:@) state=algorithm ;;
+              algorithm:[a-zA-Z0-9_+.-]) ;;
+              algorithm::) state=digest ;;
+              digest:[a-fA-F0-9]) ;;
+              *) return 1 ;;
+            esac
+          done
+          [[ "$state" != algorithm ]]
         }
 
         set -f # don't glob-expand the path list
@@ -75,36 +72,16 @@ runs:
             continue
           fi
           while IFS= read -r -d '' dockerfile; do
-            stages=" "
             while IFS= read -r line || [ -n "$line" ]; do
-              line="${line%$'\r'}" # tolerate CRLF line endings
-              read -r -a words <<< "$line"
-              [ "${words[0]^^}" = "FROM" ] || continue
-              image="${words[1]}"
-              case "$image" in
-                scratch) ;;
-                ""|--*|*'$'*)
-                  echo "Unable to extract image from '$(clean "$line")' (in $(clean "$dockerfile")) - only plain \"FROM image[:tag] [AS name]\" is supported, skipping"
-                  ;;
-                *)
-                  # skip references to earlier build stages, e.g. "FROM builder"
-                  if [[ "$stages" != *" ${image,,} "* ]]; then
-                    if valid_image "$image"; then
-                      echo "Found $image (in $(clean "$dockerfile"))"
-                      echo "$image" >> "$images_file"
-                    else
-                      echo "Ignoring invalid image reference '$(clean "$image")' (in $(clean "$dockerfile"))"
-                    fi
-                  fi
-                  ;;
-              esac
-              # record the stage alias even for FROM lines that are not pulled,
-              # e.g. "FROM --platform=$BUILDPLATFORM golang AS builder"
-              for ((i = 2; i < ${#words[@]} - 1; i++)); do
-                if [ "${words[i]^^}" = "AS" ]; then
-                  stages="$stages${words[i + 1],,} "
-                fi
-              done
+              read -r instruction image extra <<< "${line%$'\r'}"
+              [[ "${instruction^^}" == FROM ]] || continue
+              if [[ -n "$image" && -z "$extra" && "${image,,}" != scratch ]] && valid_image "$image"; then
+                echo "Found $image (in $(clean "$dockerfile"))"
+                echo "$image" >> "$images_file"
+              else
+                echo "Ignoring unsupported FROM line in $(clean "$dockerfile"): $(clean "$line")"
+              fi
+              break
             done < "$dockerfile"
           done < <(find "$dir" -type f -name 'Dockerfile*' ! -name '*.dockerignore' -print0)
         done
@@ -142,7 +119,6 @@ runs:
         fi
         while IFS= read -r image; do
           echo "Pre-pulling $image in background"
-          logfile="docker-pull-$(printf '%s' "$image" | tr -c 'a-zA-Z0-9' '-').log"
-          setsid docker pull -- "$image" > "$logfile" 2>&1 < /dev/null &
+          setsid docker pull -- "$image" > /dev/null 2>&1 < /dev/null &
           disown
         done < "$IMAGES_FILE"
