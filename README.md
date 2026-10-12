@@ -49,10 +49,13 @@ supported. `FROM scratch`, `FROM --platform=...`, `FROM $VAR` and references to 
 Call it right after checkout, before dependency caches are restored:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
 - uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1
   with:
     dockerfile-paths: src/test/resources/testcontainers
+
+
+
 ```
 
 | Input                | Required | Description                                                                                  |
