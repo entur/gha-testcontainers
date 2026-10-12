@@ -18,7 +18,7 @@ In a nutshell what we are trying to do it to stop waiting for testcontainers, i.
 : Pulling image layers:  0 pending, 18 downloaded, 18 extracted, (208 MB/208 MB)
 : Pull complete. 18 layers, pulled in 7s (downloaded 208 MB at 29 MB/s)
 ```
-so this is an optimization which typically could save from 5s to 30s, depending on the number and size of images. It does not use any cache.
+so this can save from **5 to 30 seconds per build**, depending on the number and size of images. It does not use any cache.
 
 ## Features
 The project has three parts:
@@ -39,13 +39,17 @@ e.g. `src/test/resources/testcontainers/Dockerfile.redis`:
 ```dockerfile
 FROM redis:7.2
 ```
+or with digest
 
-Digests work too (`FROM redis@sha256:...`). Only plain `FROM image[:tag|@digest] [AS name]` lines are
-supported. `FROM scratch`, `FROM --platform=...`, `FROM $VAR` and references to earlier build stages are ignored.
+```dockerfile
+FROM redis@sha256:...
+```
+
+Only plain `FROM image[:tag|@digest] [AS name]` lines are supported.
 
 ## GitHub Action
 
-Call it right after checkout, before JDK and caches are restored:
+Call `pre-pull-docker-images` right after checkout, before JDK and caches are restored:
 
 ```yaml
 - uses: actions/checkout@v7
@@ -73,6 +77,8 @@ Call it right after checkout, before JDK and caches are restored:
 
 ```
 
+or the equivalent for Gradle.
+
 | Input                | Required | Description                                                                                  |
 |----------------------|----------|----------------------------------------------------------------------------------------------|
 | `dockerfile-paths`   | yes      | Whitespace/newline-separated paths searched recursively for files named `Dockerfile*`.       |
@@ -86,30 +92,16 @@ Call it right after checkout, before JDK and caches are restored:
 
 Pulls run detached - they continue after the step ends.
 
-## Java library
-Add a Dockerfile parser to get the right image into testcontainers. Alternatively write your own.
-
-```xml
-<dependency>
-  <groupId>no.entur.testcontainers</groupId>
-  <artifactId>dockerfile-helper</artifactId>
-  <version>1.0.1-SNAPSHOT</version>
-  <scope>test</scope>
-</dependency>
-```
+## Bootstrapping testcontainers in tests
+Add a parser to get the right image into testcontainers. Alternatively write your own.
 
 ```java
 // classpath resource: src/test/resources/testcontainers/Dockerfile.redis
 String image = DockerfileImages.fromResource("testcontainers/Dockerfile.redis");
 var redis = new GenericContainer<>(DockerImageName.parse(image));
 ```
-The helper throws `IllegalStateException` if the classpath resource is missing or there is no usable `FROM` line, and
-`UncheckedIOException` if reading fails. Parsing rules match the action. See the [standalone Maven example](examples/maven).
 
-Alternatively, **skip the dependency and copy the class**: [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java)
-is a single self-contained file that only uses the JDK (apart from the optional `@Nullable` annotation, which you can delete). Drop it into your test sources (change the `package` as needed) and use it exactly as above. 
-
-That avoids adding and versioning another test artifact.
+Get our parser from `no.entur.testcontainers:dockerfile-helper:1.0.1-SNAPSHOT`, alternatively directly copy the class [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java).That avoids adding and versioning another test artifact.
 
 ## Keeping images up to date (Dependabot)
 
@@ -149,7 +141,6 @@ See [`examples/maven/.github/dependabot.yaml`](examples/maven/.github/dependabot
 
 The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling public images is anonymous.
 
-- Declare `permissions: contents: read` (the example workflow does) - the action itself adds nothing to that.
 - Only pass `registry-login`/`registry-password` if you need private images or higher rate limits, and then
   use a **read-only pull token**, not a personal password. Pass them to this step only, never as workflow-wide `env`.
   For `ghcr.io`, `github.actor` with `secrets.GITHUB_TOKEN` and `packages: read` avoids a stored secret altogether.
