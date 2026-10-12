@@ -23,7 +23,7 @@ so this can save from **5 to 30 seconds per build**, depending on the number and
 ## Features
 The project has three parts:
 
-- **GitHub Action** – pre-pulls every image found in the Dockerfiles, in the background.
+- **GitHub Action** – pre-pulls the first usable base image from each Dockerfile, in the background.
 - **Java library** – resolves an image name from the `FROM` line of a Dockerfile on the classpath, so test code
   uses exactly the image CI pre-pulled and Dependabot bumped.
 - **Dependabot config example** – Copy-paste ready
@@ -45,7 +45,10 @@ or with digest
 FROM redis@sha256:...
 ```
 
-Only plain `FROM image[:tag|@digest] [AS name]` lines are supported.
+Only plain `FROM image[:tag|@digest] [AS name]` lines are supported. Like the Java parser, the action
+uses only the first usable image per Dockerfile; it does not build Dockerfiles or pull every stage.
+`FROM scratch` (case-insensitive), flags such as `--platform`, build args (`$VAR`) and references
+to earlier stages are skipped. Image references must also pass the action's Docker/OCI validation.
 
 ## GitHub Action
 
@@ -90,7 +93,8 @@ or the equivalent for Gradle.
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue after the step ends.
+Pulls run detached - they continue after the step ends. Pull logs are written to a private, uniquely
+created directory under `$RUNNER_TEMP`; the action prints its path for troubleshooting.
 
 ## Bootstrapping testcontainers in tests
 Add a parser to get the right image into testcontainers. Alternatively write your own.
@@ -155,6 +159,6 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
   characters stripped (no workflow-command or log-line injection), the `images` output uses a random delimiter,
   and images are passed to `docker pull --` so they can never be parsed as options.
 - Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
-- The action does not read secrets, make network calls other than `docker pull`/`docker login`, or write outside
-  `$RUNNER_TEMP` and the working directory (pull logs).
+- Image lists and pull logs are written under `$RUNNER_TEMP`, not into the checkout. Pull logs use a private,
+  uniquely created directory so repository-controlled symlinks cannot redirect them into runner files.
 - Pin the action to a commit SHA for supply-chain safety.

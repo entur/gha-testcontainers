@@ -1,0 +1,169 @@
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+import tempfile
+import textwrap
+import time
+import unittest
+
+
+class PrePullActionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        action = Path(__file__).with_name("action.yml").read_text()
+        scripts = re.findall(r"^      run: \|\n((?:        [^\n]*\n|\n)+)", action, re.MULTILINE)
+        if len(scripts) != 2:
+            raise ValueError("Expected the action's collect and pull Bash scripts")
+        cls.collect_script, cls.pull_script = map(textwrap.dedent, scripts)
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="gha-testcontainers-test-")
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.workspace = self.root / "workspace"
+        self.runner_temp = self.root / "runner-temp"
+        self.bin = self.root / "bin"
+        for directory in (self.workspace, self.runner_temp, self.bin):
+            directory.mkdir()
+        self.output = self.root / "github-output"
+        self.images_file = self.runner_temp / "pre-pull-docker-images.txt"
+        self.completions = self.root / "docker-completions"
+        self.env = {
+            **os.environ,
+            "RUNNER_TEMP": str(self.runner_temp),
+            "GITHUB_OUTPUT": str(self.output),
+            "DOCKERFILE_PATHS": "dockerfiles",
+            "IMAGES_FILE": str(self.images_file),
+            "REGISTRY": "docker.io",
+            "REGISTRY_LOGIN": "",
+            "REGISTRY_PASSWORD": "",
+            "FAKE_DOCKER_COMPLETIONS": str(self.completions),
+            "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
+        }
+        docker = self.bin / "docker"
+        docker.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'docker %s\\n' \"$*\"\n"
+            "printf 'complete\\n'\n"
+            "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_COMPLETIONS\"\n"
+        )
+        docker.chmod(0o700)
+
+    def dockerfile(self, name, content):
+        path = self.workspace / "dockerfiles" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode())
+
+    def run_script(self, script, env=None, check=True):
+        return subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+            cwd=self.workspace,
+            env=self.env if env is None else env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=check,
+        )
+
+    def collect(self):
+        self.output.write_text("")
+        result = self.run_script(self.collect_script)
+        return result, self.images_file.read_text().splitlines()
+
+    def test_first_usable_image_matches_simple_java_parser_cases(self):
+        cases = (
+            ("FROM redis:7.2\n", "redis:7.2"),
+            ("# comment\r\n  fRoM redis:7.2 AS cache\r\n", "redis:7.2"),
+            ("FROM alpine:3 AS build\nFROM nginx:1.27\n", "alpine:3"),
+            ("FROM scratch\nFROM $BASE\nFROM busybox\n", "busybox"),
+            ("FROM SCRATCH AS empty\nFROM EMPTY\nFROM busybox", "busybox"),
+            (
+                "FROM --platform=$BUILDPLATFORM golang AS builder\nFROM BUILDER AS x\nfrom alpine:3 as final\n",
+                "alpine:3",
+            ),
+            (f"FROM redis@sha256:{'a' * 64}\n", f"redis@sha256:{'a' * 64}"),
+        )
+        for content, expected in cases:
+            with self.subTest(content=content):
+                self.dockerfile("Dockerfile.test", content)
+                _, images = self.collect()
+                self.assertEqual(images, [expected])
+                self.assertIn("found=true\n", self.output.read_text())
+
+    def test_unusable_or_unsafe_images_are_not_collected(self):
+        for content in (
+            "# comment\nRUN true\n",
+            "FROM\nFROM scratch\nFROM $BASE\nFROM --platform=linux/amd64 alpine\n",
+            "FROM --help\nFROM redis;touch\nFROM $(id)\nFROM `id`\n",
+        ):
+            with self.subTest(content=content):
+                self.dockerfile("Dockerfile.test", content)
+                _, images = self.collect()
+                self.assertEqual(images, [])
+                self.assertEqual(self.output.read_text(), "found=false\n")
+
+    def test_invalid_reference_does_not_hide_later_usable_image(self):
+        self.dockerfile("Dockerfile.test", "FROM invalid;reference\nFROM redis:7.2\n")
+        _, images = self.collect()
+        self.assertEqual(images, ["redis:7.2"])
+
+    def test_recursive_discovery_deduplication_and_dockerignore_exclusion(self):
+        self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
+        self.dockerfile("nested/Dockerfile.redis", "FROM redis:7.2\n")
+        self.dockerfile("nested/Dockerfile.nginx", "FROM nginx:1.27\n")
+        self.dockerfile("Dockerfile.redis.dockerignore", "FROM postgres:17\n")
+        _, images = self.collect()
+        self.assertEqual(images, ["nginx:1.27", "redis:7.2"])
+
+    def test_missing_paths_are_reported_and_skipped(self):
+        result, images = self.collect()
+        self.assertEqual(images, [])
+        self.assertIn("not found - skipping", result.stdout)
+        self.assertEqual(self.output.read_text(), "found=false\n")
+
+    def wait_for_pulls(self, count):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if self.completions.exists() and len(self.completions.read_text().splitlines()) == count:
+                return
+            time.sleep(0.02)
+        self.fail("Background Docker pulls did not complete")
+
+    def test_repository_symlinks_cannot_redirect_logs_and_invocations_are_isolated(self):
+        self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
+        self.dockerfile("Dockerfile.nginx", "FROM nginx:1.27\n")
+        self.collect()
+        victim = self.root / "shell-profile"
+        victim.write_text("must stay unchanged\n")
+        for name in ("docker-pull-redis-7-2.log", "docker-pull-nginx-1-27.log"):
+            (self.workspace / name).symlink_to(victim)
+
+        for invocation in (1, 2):
+            result = self.run_script(self.pull_script)
+            self.wait_for_pulls(invocation * 2)
+            self.assertEqual(victim.read_text(), "must stay unchanged\n")
+            logs = list(self.runner_temp.glob("docker-pull.*/*.log"))
+            self.assertEqual(len(logs), invocation * 2)
+            for log in logs:
+                self.assertEqual(log.parent.parent, self.runner_temp)
+                self.assertEqual(stat.S_IMODE(log.parent.stat().st_mode), 0o700)
+                self.assertIn("docker pull -- ", log.read_text())
+                self.assertTrue(log.read_text().endswith("complete\n"))
+            self.assertIn("Docker pull logs:", result.stdout)
+        self.assertEqual(len({log.parent for log in logs}), 2)
+
+    def test_missing_runner_temp_fails_before_pulling(self):
+        self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
+        self.collect()
+        env = self.env.copy()
+        del env["RUNNER_TEMP"]
+        result = self.run_script(self.pull_script, env=env, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RUNNER_TEMP", result.stderr)
+        self.assertEqual(list(self.workspace.glob("docker-pull-*.log")), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
