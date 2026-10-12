@@ -18,7 +18,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Test Dockerfile parsing and pull-log isolation
-        run: python3 .github/actions/pre-pull-docker-images/test_action.py
+        run: python3 tests/test_action.py
 
   validate-maven-build:
     uses: entur/abt-gha-public/.github/workflows/maven-open-source-verify.yml@v2.0

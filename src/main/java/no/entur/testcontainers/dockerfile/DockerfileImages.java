@@ -19,8 +19,8 @@ import org.jspecify.annotations.Nullable;
  * Keeping images (e.g. Testcontainers images) in Dockerfiles lets Dependabot/Renovate bump them, while the tests read the very same files as their single
  * source of truth. The Dockerfiles are never built.
  * <p>
- * Parsing mirrors the pre-pull GitHub Action: {@code FROM image[:tag|@digest] [AS stage]}; {@code scratch}, flags ({@code --platform}), build args
- * ({@code $VAR}) and references to earlier stages are skipped.
+ * Supports {@code FROM image[:tag|@digest] [AS stage]}; {@code scratch}, flags ({@code --platform}), build args ({@code $VAR}) and references to earlier
+ * stages are skipped. The pre-pull GitHub Action is stricter: it only accepts a plain first {@code FROM} line, without build stages.
  * <p>
  * All methods throw {@link IllegalStateException} if there is no usable {@code FROM} line (or the classpath resource is missing) and
  * {@link UncheckedIOException} if reading fails.

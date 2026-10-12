@@ -23,7 +23,7 @@ so this can save from **5 to 30 seconds per build**, depending on the number and
 ## Features
 The project has three parts:
 
-- **GitHub Action** – pre-pulls the first usable base image from each Dockerfile, in the background.
+- **GitHub Action** – pre-pulls the first plain `FROM` image from each simple Dockerfile, in the background.
 - **Java library** – resolves an image name from the `FROM` line of a Dockerfile on the classpath, so test code
   uses exactly the image CI pre-pulled and Dependabot bumped.
 - **Dependabot config example** – Copy-paste ready
@@ -45,10 +45,11 @@ or with digest
 FROM redis@sha256:...
 ```
 
-Only plain `FROM image[:tag|@digest] [AS name]` lines are supported. Like the Java parser, the action
-uses only the first usable image per Dockerfile; it does not build Dockerfiles or pull every stage.
-`FROM scratch` (case-insensitive), flags such as `--platform`, build args (`$VAR`) and references
-to earlier stages are skipped. Image references must also pass the action's Docker/OCI validation.
+The action reads only the first `FROM` line, in the form `FROM image[:tag][@digest]`.
+It does not build Dockerfiles or support builders/stage aliases (`AS`), flags, build args or inline comments.
+If that line is unsupported, uses `scratch` (case-insensitive), or fails the image-character whitelist,
+the Dockerfile is skipped; later `FROM` lines are not considered. Blank lines and standalone comments are fine.
+The Java parser is more permissive, but both read the same image from simple Dockerfiles.
 
 ## GitHub Action
 
@@ -151,13 +152,12 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
 - Credentials reach the login via environment variables and `--password-stdin` (never on a command line or
   interpolated into the script), and are written to the runner's Docker config for the lifetime of the job, as
   the background pulls need them. Use ephemeral/GitHub-hosted runners, or log out yourself on shared runners.
-- Dockerfile content is treated as **untrusted** (e.g. from a pull request): each image must match the
-  [Docker/OCI reference grammar](https://github.com/distribution/reference/blob/main/reference.go)
-  (`[domain[:port]/]path[:tag][@algorithm:hex]`: lowercase path components, tag of at most 128 characters, digest with
-  at least 32 hex characters, repository name of at most 255 characters), which only permits letters, digits and
-  `. _ - / : @ [ ]` in their defined positions; anything else is ignored. Logged values have control
-  characters stripped (no workflow-command or log-line injection), the `images` output uses a random delimiter,
-  and images are passed to `docker pull --` so they can never be parsed as options.
+- Dockerfile content is treated as **untrusted** (e.g. from a pull request). A stateful character whitelist allows
+  letters, digits and `. _ / : - [ ]` in image names/tags, letters, digits and `_ + . -` in digest algorithms,
+  and only hexadecimal characters in the digest. References cannot start with an option or contain shell syntax,
+  whitespace or control characters. This is not a full Docker/OCI grammar validator; Docker reports malformed
+  references in the pull logs. Logged values have control characters stripped, the `images` output uses a random
+  delimiter, and images are passed to `docker pull --` so they can never be parsed as options.
 - Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
 - Image lists and pull logs are written under `$RUNNER_TEMP`, not into the checkout. Pull logs use a private,
   uniquely created directory so repository-controlled symlinks cannot redirect them into runner files.
