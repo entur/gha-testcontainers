@@ -2,40 +2,39 @@
 
 # gha-testcontainers
 
-This repo tries to help enable two goals for testcontainers-users:
+This repo tries to help enable two goals for users of testcontainers:
 
 1. **Faster builds** – pull the Testcontainers images in the background so it runs in parallel to JDK, dependency cache and build setup.
 2. **Automatic image bumps** – create `Dockerfile`s instead of inlining image names in code. So that Dependabot can do its job.
 
+In a nutshell what we are trying to do it to stop waiting for testcontainers, i.e. logs like
+
+```
+: ✔︎ Docker server version should be at least 1.6.0
+: Pulling docker image: postgis/postgis:17-3.5. Please be patient; this may take some time but only needs to be done once.
+: Starting to pull image
+: Pulling image layers:  0 pending,  0 downloaded,  0 extracted, (0 bytes/0 bytes)
+...
+: Pulling image layers:  0 pending, 18 downloaded, 18 extracted, (208 MB/208 MB)
+: Pull complete. 18 layers, pulled in 7s (downloaded 208 MB at 29 MB/s)
+```
+so this is an optimization which typically could save from 5s to 30s, depending on the number and size of images. It does not use any cache.
+
 ## Features
-
-- **Background pre-pull** – GitHub Action downloads all images detached from the step, overlapping with Java setup and dependency caching/resolution.
-- **Dependabot-friendly** – one `Dockerfile.<name>` per image; Dependabot/Renovate bump the tag or digest. The Dockerfiles are never built.
-- **Single source of truth** – the same Dockerfiles are read by CI (the action) and by test code (the Java library).
-- **Tiny Java library** – resolve an image name from a classpath Dockerfile; a single class with no dependencies, Java 17+, so you can depend on it or simply copy it.
-- **Safe parsing** – ignores `scratch`, `--platform` flags, `$VAR` and earlier build stages; supports tags and digests.
-- **Configurable** – custom directories, file prefixes and classloaders; optional login to any registry (Docker Hub by default).
-
 The project has three parts:
 
 - **GitHub Action** – pre-pulls every image found in the Dockerfiles, in the background.
 - **Java library** – resolves an image name from the `FROM` line of a Dockerfile on the classpath, so test code
   uses exactly the image CI pre-pulled and Dependabot bumped.
 - **Dependabot config example** – Copy-paste ready
-  
 
-## Layout
-
-```
-gha-testcontainers/
-├── .github/actions/pre-pull-docker-images/action.yml   # the GitHub Action (composite)
-├── src/           # the Java library (single Maven jar project, Java 17+, no runtime dependencies)
-└── examples/maven # complete standalone Maven project: Dockerfiles, tests, workflow and Dependabot config
-```
-
+# Usage
 ## Dockerfiles
+Create a directory with very simple Dockerfiles, preferably
 
-One file per image, e.g. `src/test/resources/testcontainers/Dockerfile.redis`:
+> Dockerfile.myapp
+
+e.g. `src/test/resources/testcontainers/Dockerfile.redis`:
 
 ```dockerfile
 FROM redis:7.2
@@ -46,15 +45,31 @@ supported. `FROM scratch`, `FROM --platform=...`, `FROM $VAR` and references to 
 
 ## GitHub Action
 
-Call it right after checkout, before dependency caches are restored:
+Call it right after checkout, before JDK and caches are restored:
 
 ```yaml
 - uses: actions/checkout@v7
-- uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1
+- name: Pre-pull Docker images in background
+  uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1
   with:
     dockerfile-paths: src/test/resources/testcontainers
-
-
+- name: Set up Java 25
+  uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+  with:
+    java-version: 25
+    distribution: liberica
+    server-id: entur-partner
+    server-username: MAVEN_USERNAME
+    server-password: MAVEN_PASSWORD
+- name: Restore Maven repository cache
+  id: maven-cache-restore
+  uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+  with:
+    path: ~/.m2/repository
+    key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+    restore-keys: |
+      ${{ runner.os }}-maven-
+...
 
 ```
 
@@ -72,6 +87,7 @@ Call it right after checkout, before dependency caches are restored:
 Pulls run detached - they continue after the step ends.
 
 ## Java library
+Add a Dockerfile parser to get the right image into testcontainers. Alternatively write your own.
 
 ```xml
 <dependency>
@@ -99,12 +115,6 @@ is a single self-contained file that only uses the JDK. Drop it into your test s
 needed) and use it exactly as above. That avoids adding and versioning another test artifact; the trade-off is
 that fixes are not picked up automatically, so re-copy it if you need them. A trimmed-down copy that only handles
 your own Dockerfile layout is fine too.
-
-### Putting the files on the classpath
-
-Place them under `src/test/resources/testcontainers/` (test code) or `src/main/resources/testcontainers/`
-(if shipped, e.g. emulator helpers). Use the same directory for the action's `dockerfile-paths` and
-Dependabot's `directory` (see [`examples/maven/.github/dependabot.yaml`](examples/maven/.github/dependabot.yaml)).
 
 ## Permissions and secrets
 
