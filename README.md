@@ -93,7 +93,7 @@ Add a Dockerfile parser to get the right image into testcontainers. Alternativel
 <dependency>
   <groupId>no.entur.testcontainers</groupId>
   <artifactId>dockerfile-helper</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.1-SNAPSHOT</version>
   <scope>test</scope>
 </dependency>
 ```
