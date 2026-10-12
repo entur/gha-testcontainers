@@ -21,7 +21,7 @@ The project has three parts:
 - **GitHub Action** – pre-pulls every image found in the Dockerfiles, in the background.
 - **Java library** – resolves an image name from the `FROM` line of a Dockerfile on the classpath, so test code
   uses exactly the image CI pre-pulled and Dependabot bumped.
-- **Dependabot config example ** – Copy-paste ready
+- **Dependabot config example** – Copy-paste ready
   
 
 ## Layout
