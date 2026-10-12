@@ -19,7 +19,7 @@ class NginxIT {
 
 	// image comes from src/test/resources/testcontainers/Dockerfile.nginx
 	@Container
-	static GenericContainer<?> nginx = new GenericContainer<>(DockerImageName.parse(DockerfileImages.get("nginx"))).withExposedPorts(80);
+	static GenericContainer<?> nginx = new GenericContainer<>(DockerImageName.parse(DockerfileImages.fromResource("testcontainers/Dockerfile.nginx"))).withExposedPorts(80);
 
 	@Test
 	void serves() throws Exception {

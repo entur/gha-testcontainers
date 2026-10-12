@@ -1,95 +1,119 @@
 package no.entur.testcontainers.dockerfile;
 
-import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
+
+import org.jspecify.annotations.Nullable;
 
 /**
- * Resolves Docker image names from the {@code FROM} line of Dockerfiles on the classpath.
+ * Parses the image of the first usable {@code FROM} line of a Dockerfile.
  * <p>
  * Keeping images (e.g. Testcontainers images) in Dockerfiles lets Dependabot/Renovate bump them, while the tests read the very same files as their single
  * source of truth. The Dockerfiles are never built.
  * <p>
- * By default, {@code get("redis")} reads {@code testcontainers/Dockerfile.redis}. Use {@link #in(String)} and {@link #withPrefix(String)} to change the
- * directory and file name prefix.
+ * Parsing mirrors the pre-pull GitHub Action: {@code FROM image[:tag|@digest] [AS stage]}; {@code scratch}, flags ({@code --platform}), build args
+ * ({@code $VAR}) and references to earlier stages are skipped.
+ * <p>
+ * All methods throw {@link IllegalStateException} if there is no usable {@code FROM} line (or the classpath resource is missing) and
+ * {@link UncheckedIOException} if reading fails.
  */
 public final class DockerfileImages {
 
-	public static final String DEFAULT_DIRECTORY = "testcontainers";
-	public static final String DEFAULT_FILE_PREFIX = "Dockerfile.";
-
-	private static final DockerfileImages DEFAULT = new DockerfileImages(DEFAULT_DIRECTORY, DEFAULT_FILE_PREFIX, DockerfileImages.class.getClassLoader());
-
-	private final String directory;
-	private final String filePrefix;
-	private final ClassLoader classLoader;
-
-	private DockerfileImages(String directory, String filePrefix, ClassLoader classLoader) {
-		this.directory = directory;
-		this.filePrefix = filePrefix;
-		this.classLoader = classLoader;
+	private DockerfileImages() {
 	}
 
 	/**
-	 * Resolve the image of {@code testcontainers/Dockerfile.<name>}.
-	 *
-	 * @param name the Dockerfile suffix, e.g. {@code redis}
-	 * @return the image of the first (non-stage-reference) {@code FROM} line, e.g. {@code redis:7.2}
-	 * @throws IllegalStateException if the file is missing or has no usable FROM line
+	 * @param dockerfile Dockerfile content
+	 * @return the image, e.g. {@code redis:7.2}
 	 */
-	public static String get(String name) {
-		return DEFAULT.image(name);
+	public static String parse(String dockerfile) {
+		return firstImage(dockerfile, "Dockerfile content");
 	}
 
 	/**
-	 * @param directory classpath directory containing the Dockerfiles, e.g. {@code docker/test}
+	 * Reads UTF-8 content; the stream is not closed.
 	 */
-	public static DockerfileImages in(String directory) {
-		return DEFAULT.withDirectory(directory);
-	}
-
-	public DockerfileImages withDirectory(String directory) {
-		return new DockerfileImages(trimSlashes(directory), filePrefix, classLoader);
-	}
-
-	/**
-	 * @param filePrefix file name prefix preceding the name, e.g. {@code Dockerfile.}
-	 */
-	public DockerfileImages withPrefix(String filePrefix) {
-		return new DockerfileImages(directory, filePrefix, classLoader);
-	}
-
-	public DockerfileImages withClassLoader(ClassLoader classLoader) {
-		return new DockerfileImages(directory, filePrefix, classLoader);
-	}
-
-	public String image(String name) {
-		String resource = (directory.isEmpty() ? "" : directory + "/") + filePrefix + name;
-		try (InputStream in = classLoader.getResourceAsStream(resource)) {
-			if (in == null) {
-				throw new IllegalStateException("Dockerfile not found on classpath: " + resource);
-			}
-			return parse(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)))
-					.orElseThrow(() -> new IllegalStateException("No usable FROM line found in " + resource));
+	public static String parse(InputStream dockerfile) {
+		try {
+			return parse(dockerfile.readAllBytes(), "input stream");
 		} catch (IOException e) {
-			throw new IllegalStateException("Could not load " + resource, e);
+			throw new UncheckedIOException("Could not read Dockerfile from input stream", e);
 		}
 	}
 
 	/**
-	 * Returns the image of the first {@code FROM image[:tag|@digest] [AS stage]} line. Mirrors the pre-pull GitHub Action: {@code scratch}, flags
-	 * ({@code --platform}), build args ({@code $VAR}) and references to earlier stages are skipped.
+	 * @param dockerfile UTF-8 encoded Dockerfile content
 	 */
-	static Optional<String> parse(BufferedReader reader) throws IOException {
+	public static String parse(byte[] dockerfile) {
+		return parse(dockerfile, "byte array");
+	}
+
+	/**
+	 * @param resource classpath resource, e.g. {@code testcontainers/Dockerfile.redis}; looked up with the thread context class loader, then this class's
+	 */
+	public static String fromResource(String resource) {
+		String name = stripLeadingSlash(resource);
+		InputStream in = null;
+		ClassLoader context = Thread.currentThread().getContextClassLoader();
+		if (context != null) {
+			in = context.getResourceAsStream(name);
+		}
+		if (in == null) {
+			in = DockerfileImages.class.getClassLoader().getResourceAsStream(name);
+		}
+		return fromResource(in, resource);
+	}
+
+	/**
+	 * @param resource    classpath resource, e.g. {@code testcontainers/Dockerfile.redis}
+	 * @param classLoader the class loader to look it up with
+	 */
+	public static String fromResource(String resource, ClassLoader classLoader) {
+		return fromResource(classLoader.getResourceAsStream(stripLeadingSlash(resource)), resource);
+	}
+
+	private static String fromResource(@Nullable InputStream stream, String resource) {
+		if (stream == null) {
+			throw new IllegalStateException("Dockerfile not found on classpath: " + resource);
+		}
+		try (InputStream in = stream) {
+			return parse(in.readAllBytes(), "classpath resource " + resource);
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not read Dockerfile from classpath resource " + resource, e);
+		}
+	}
+
+	private static String stripLeadingSlash(String resource) {
+		return resource.startsWith("/") ? resource.substring(1) : resource;
+	}
+
+	public static String fromPath(Path path) {
+		try {
+			return parse(Files.readAllBytes(path), path.toString());
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not read Dockerfile " + path, e);
+		}
+	}
+
+	public static String fromFile(File file) {
+		return fromPath(file.toPath());
+	}
+
+	private static String parse(byte[] dockerfile, String source) {
+		return firstImage(new String(dockerfile, StandardCharsets.UTF_8), source);
+	}
+
+	private static String firstImage(String dockerfile, String source) {
 		List<String> stages = new ArrayList<>();
-		String line;
-		while ((line = reader.readLine()) != null) {
+		for (String line : dockerfile.split("\\R")) {
 			String[] words = line.trim().split("\\s+");
 			if (words.length < 2 || !words[0].equalsIgnoreCase("FROM")) {
 				continue;
@@ -98,7 +122,7 @@ public final class DockerfileImages {
 			boolean usable = !image.startsWith("--") && !image.contains("$") && !image.equalsIgnoreCase("scratch")
 					&& !stages.contains(image.toLowerCase(Locale.ROOT));
 			if (usable) {
-				return Optional.of(image);
+				return image;
 			}
 			for (int i = 2; i < words.length - 1; i++) {
 				if (words[i].equalsIgnoreCase("AS")) {
@@ -106,17 +130,6 @@ public final class DockerfileImages {
 				}
 			}
 		}
-		return Optional.empty();
-	}
-
-	private static String trimSlashes(String path) {
-		String result = path;
-		while (result.startsWith("/")) {
-			result = result.substring(1);
-		}
-		while (result.endsWith("/")) {
-			result = result.substring(0, result.length() - 1);
-		}
-		return result;
+		throw new IllegalStateException("No usable FROM line found in " + source);
 	}
 }

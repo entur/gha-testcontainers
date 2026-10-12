@@ -14,7 +14,7 @@ class RedisIT {
 
 	// image comes from src/test/resources/testcontainers/Dockerfile.redis
 	@Container
-	static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse(DockerfileImages.get("redis"))).withExposedPorts(6379);
+	static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse(DockerfileImages.fromResource("testcontainers/Dockerfile.redis"))).withExposedPorts(6379);
 
 	@Test
 	void redisAnswersPing() throws Exception {

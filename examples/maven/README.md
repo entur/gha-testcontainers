@@ -6,7 +6,7 @@ A complete, buildable project (`mvn verify`, needs Docker) showing the whole set
 |------|---------|
 | `src/test/resources/testcontainers/Dockerfile.redis`, `Dockerfile.nginx` | One Dockerfile per Testcontainers image. Never built; only the `FROM` line matters. |
 | `pom.xml` | Depends (test scope) on `no.entur.testcontainers:dockerfile-helper`, the library built from the repository root. While it is unreleased, run `mvn install` in the repository root first. |
-| `src/test/java/com/example/RedisIT.java`, `NginxIT.java` | Integration tests (Failsafe) using `DockerfileImages.get("redis")` / `get("nginx")`. |
+| `src/test/java/com/example/RedisIT.java`, `NginxIT.java` | Integration tests (Failsafe) using `DockerfileImages.fromResource("testcontainers/Dockerfile.redis")` / `...nginx`. |
 | `.github/workflows/ci.yml` | Pre-pulls the images in the background, then sets up Java + Maven cache, then runs `mvn verify`. |
 | `.github/dependabot.yaml` | Lets Dependabot bump the images (and Maven/Actions dependencies). |
 

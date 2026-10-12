@@ -99,45 +99,31 @@ Add a Dockerfile parser to get the right image into testcontainers. Alternativel
 ```
 
 ```java
-// reads classpath:testcontainers/Dockerfile.redis
-String image = DockerfileImages.get("redis");
+// classpath resource: src/test/resources/testcontainers/Dockerfile.redis
+String image = DockerfileImages.fromResource("testcontainers/Dockerfile.redis");
 var redis = new GenericContainer<>(DockerImageName.parse(image));
-
-// custom directory / file name prefix: classpath:docker/Dockerfile-nginx
-String nginx = DockerfileImages.in("docker").withPrefix("Dockerfile-").image("nginx");
 ```
 
-Throws `IllegalStateException` if the file is missing or has no usable `FROM` line. Parsing rules match the
-action. See the [standalone Maven example](examples/maven).
+`DockerfileImages` is a set of static parse methods; each returns the image of the first usable `FROM` line:
+
+| Method | Input |
+|---|---|
+| `parse(String)`, `parse(InputStream)`, `parse(byte[])` | Dockerfile content (UTF-8) |
+| `fromResource(String)`, `fromResource(String, ClassLoader)` | classpath resource |
+| `fromPath(Path)`, `fromFile(File)` | file on disk |
+
+Kotlin: the methods are plain statics (`DockerfileImages.fromResource("testcontainers/Dockerfile.redis")`) and the package is
+`@NullMarked` ([JSpecify](https://jspecify.dev/)), so Kotlin sees non-null `String` rather than `String!`. JSpecify is an
+optional `provided` dependency and is not needed at runtime.
+
+Throws `IllegalStateException` if the classpath resource is missing or there is no usable `FROM` line, and
+`UncheckedIOException` if reading fails. Parsing rules match the action. See the [standalone Maven example](examples/maven).
 
 Alternatively, **skip the dependency and copy the class**: [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java)
-is a single self-contained file that only uses the JDK. Drop it into your test sources (change the `package` as
+is a single self-contained file that only uses the JDK (apart from the optional `@Nullable` annotation, which you can delete). Drop it into your test sources (change the `package` as
 needed) and use it exactly as above. That avoids adding and versioning another test artifact; the trade-off is
 that fixes are not picked up automatically, so re-copy it if you need them. A trimmed-down copy that only handles
 your own Dockerfile layout is fine too.
-
-## Permissions and secrets
-
-The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling public images is anonymous.
-
-- Declare `permissions: contents: read` (the example workflow does) - the action itself adds nothing to that.
-- Only pass `registry-login`/`registry-password` if you need private images or higher rate limits, and then
-  use a **read-only pull token**, not a personal password. Pass them to this step only, never as workflow-wide `env`.
-  For `ghcr.io`, `github.actor` with `secrets.GITHUB_TOKEN` and `packages: read` avoids a stored secret altogether.
-- Credentials reach the login via environment variables and `--password-stdin` (never on a command line or
-  interpolated into the script), and are written to the runner's Docker config for the lifetime of the job, as
-  the background pulls need them. Use ephemeral/GitHub-hosted runners, or log out yourself on shared runners.
-- Dockerfile content is treated as **untrusted** (e.g. from a pull request): each image must match the
-  [Docker/OCI reference grammar](https://github.com/distribution/reference/blob/main/reference.go)
-  (`[domain[:port]/]path[:tag][@algorithm:hex]`: lowercase path components, tag of at most 128 characters, digest with
-  at least 32 hex characters, repository name of at most 255 characters), which only permits letters, digits and
-  `. _ - / : @ [ ]` in their defined positions; anything else is ignored. Logged values have control
-  characters stripped (no workflow-command or log-line injection), the `images` output uses a random delimiter,
-  and images are passed to `docker pull --` so they can never be parsed as options.
-- Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
-- The action does not read secrets, make network calls other than `docker pull`/`docker login`, or write outside
-  `$RUNNER_TEMP` and the working directory (pull logs).
-- Pin the action to a commit SHA for supply-chain safety.
 
 ## Keeping images up to date (Dependabot)
 
@@ -173,3 +159,25 @@ updates:
 
 See [`examples/maven/.github/dependabot.yaml`](examples/maven/.github/dependabot.yaml).
 
+## Permissions and secrets
+
+The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling public images is anonymous.
+
+- Declare `permissions: contents: read` (the example workflow does) - the action itself adds nothing to that.
+- Only pass `registry-login`/`registry-password` if you need private images or higher rate limits, and then
+  use a **read-only pull token**, not a personal password. Pass them to this step only, never as workflow-wide `env`.
+  For `ghcr.io`, `github.actor` with `secrets.GITHUB_TOKEN` and `packages: read` avoids a stored secret altogether.
+- Credentials reach the login via environment variables and `--password-stdin` (never on a command line or
+  interpolated into the script), and are written to the runner's Docker config for the lifetime of the job, as
+  the background pulls need them. Use ephemeral/GitHub-hosted runners, or log out yourself on shared runners.
+- Dockerfile content is treated as **untrusted** (e.g. from a pull request): each image must match the
+  [Docker/OCI reference grammar](https://github.com/distribution/reference/blob/main/reference.go)
+  (`[domain[:port]/]path[:tag][@algorithm:hex]`: lowercase path components, tag of at most 128 characters, digest with
+  at least 32 hex characters, repository name of at most 255 characters), which only permits letters, digits and
+  `. _ - / : @ [ ]` in their defined positions; anything else is ignored. Logged values have control
+  characters stripped (no workflow-command or log-line injection), the `images` output uses a random delimiter,
+  and images are passed to `docker pull --` so they can never be parsed as options.
+- Use `actions/checkout` with `persist-credentials: false` unless later steps push to git.
+- The action does not read secrets, make network calls other than `docker pull`/`docker login`, or write outside
+  `$RUNNER_TEMP` and the working directory (pull logs).
+- Pin the action to a commit SHA for supply-chain safety.
