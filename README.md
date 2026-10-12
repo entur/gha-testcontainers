@@ -103,27 +103,13 @@ Add a Dockerfile parser to get the right image into testcontainers. Alternativel
 String image = DockerfileImages.fromResource("testcontainers/Dockerfile.redis");
 var redis = new GenericContainer<>(DockerImageName.parse(image));
 ```
-
-`DockerfileImages` is a set of static parse methods; each returns the image of the first usable `FROM` line:
-
-| Method | Input |
-|---|---|
-| `parse(String)`, `parse(InputStream)`, `parse(byte[])` | Dockerfile content (UTF-8) |
-| `fromResource(String)`, `fromResource(String, ClassLoader)` | classpath resource |
-| `fromPath(Path)`, `fromFile(File)` | file on disk |
-
-Kotlin: the methods are plain statics (`DockerfileImages.fromResource("testcontainers/Dockerfile.redis")`) and the package is
-`@NullMarked` ([JSpecify](https://jspecify.dev/)), so Kotlin sees non-null `String` rather than `String!`. JSpecify is an
-optional `provided` dependency and is not needed at runtime.
-
-Throws `IllegalStateException` if the classpath resource is missing or there is no usable `FROM` line, and
+The helper throws `IllegalStateException` if the classpath resource is missing or there is no usable `FROM` line, and
 `UncheckedIOException` if reading fails. Parsing rules match the action. See the [standalone Maven example](examples/maven).
 
 Alternatively, **skip the dependency and copy the class**: [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java)
-is a single self-contained file that only uses the JDK (apart from the optional `@Nullable` annotation, which you can delete). Drop it into your test sources (change the `package` as
-needed) and use it exactly as above. That avoids adding and versioning another test artifact; the trade-off is
-that fixes are not picked up automatically, so re-copy it if you need them. A trimmed-down copy that only handles
-your own Dockerfile layout is fine too.
+is a single self-contained file that only uses the JDK (apart from the optional `@Nullable` annotation, which you can delete). Drop it into your test sources (change the `package` as needed) and use it exactly as above. 
+
+That avoids adding and versioning another test artifact.
 
 ## Keeping images up to date (Dependabot)
 
