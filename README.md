@@ -87,7 +87,7 @@ String image = DockerfileImages.fromResource("testcontainers/Dockerfile.redis");
 var redis = new GenericContainer<>(DockerImageName.parse(image));
 ```
 
-Get our parser from `no.entur.testcontainers:dockerfile-helper:1.0.1-SNAPSHOT`, alternatively directly copy the class [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java).
+Get our parser from `no.entur.testcontainers:dockerfile-helper:1.0.1`, alternatively directly copy the class [`DockerfileImages.java`](src/main/java/no/entur/testcontainers/dockerfile/DockerfileImages.java).
 
 ## Keeping images up to date (via Dependabot)
 
