@@ -66,9 +66,6 @@ Call `pre-pull-docker-images` right after checkout, before JDK and caches are re
   with:
     java-version: 25
     distribution: liberica
-    server-id: entur-partner
-    server-username: MAVEN_USERNAME
-    server-password: MAVEN_PASSWORD
 - name: Restore Maven repository cache
   id: maven-cache-restore
   uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -94,9 +91,7 @@ or the equivalent for Gradle.
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue after the step ends. Their output is discarded (`/dev/null`), and
-no Docker pull log files are created. Background pulls are best effort; Testcontainers still reports
-any required pull failures when tests run.
+Pulls run detached - they continue in the background after the step ends. 
 
 ## Bootstrapping testcontainers in tests
 Add a parser to get the right image into testcontainers. Alternatively write your own.
