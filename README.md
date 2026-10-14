@@ -71,12 +71,44 @@ or the equivalent for Gradle.
 | `registry`           | no       | Registry address to log in to (e.g. `ghcr.io`). Default `docker.io`.                         |
 | `registry-login`     | no       | Registry username. Login only happens if both login and password are set.                    |
 | `registry-password`  | no       | Registry password or access token.                                                           |
+| `reports`            | no       | `true` records each pull's output, exit code and duration for the [report action](#reports). Default `false`. |
 
 | Output   | Description                                          |
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue in the background after the step ends. 
+Pulls run detached - they continue in the background after the step ends. Their output is discarded unless you enable [reports](#reports).
+
+### Reports
+Background pulls are silent: if one fails (typo in a tag, missing credentials, rate limit), Testcontainers just pulls the image
+itself later and nothing tells you the pre-pull was wasted. Set `reports: true` and add the `pre-pull-docker-images-report`
+action to see, per image, whether it was pulled, failed or was still running, how long it took, and the tail of its log:
+
+```yaml
+- uses: actions/checkout@v7
+- uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1
+  with:
+    dockerfile-paths: src/test/resources/testcontainers
+    reports: true
+- uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+  with:
+    java-version: 25
+    distribution: liberica
+# optional: did the pulls finish while Java and the caches were set up? "still running" means the image may not be local yet when the tests start
+- uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images-report@v1
+- run: mvn verify
+- if: always()
+  uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images-report@v1
+```
+
+The report is printed in the job log (one group per image) and added to the job summary; each report step adds its own section.
+Use the same version of both actions. Composite actions cannot run a step at the end of the job by themselves, which is why the report is a separate step.
+
+| Input           | Required | Description                                                                      |
+|-----------------|----------|----------------------------------------------------------------------------------|
+| `fail-on-error` | no       | `true` fails the step if a pull has failed. Pulls still running never fail it. Default `false`. |
+
+This repository's [example workflow](.github/workflows/example-maven.yml) builds the [Maven example](examples/maven) with and without the pre-pull.
 
 ## Bootstrapping testcontainers in tests
 Add a parser to get the right image into testcontainers. Alternatively write your own.
@@ -139,4 +171,8 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
   so they can never be parsed as options.
 - The action does not write files into the checkout. Collected image lists are stored under `$RUNNER_TEMP`,
   and background pull output goes to `/dev/null`, so repository symlinks cannot redirect pull logs into runner files.
+  With `reports: true`, pull output instead goes to a `0700` directory under `$RUNNER_TEMP` (refused if it is a
+  symlink or not owned by the runner user), in files named after a hash of the image, never after the image itself.
+  The report action treats that output as untrusted: only printable ASCII is shown, every log line is prefixed so
+  it cannot form a workflow command (`::...`) or close the summary's code fence, and only the tail is shown.
 - Pin the action to a commit SHA for supply-chain safety.

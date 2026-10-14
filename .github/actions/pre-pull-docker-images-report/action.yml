@@ -1,0 +1,111 @@
+name: "Report on pre-pulled Docker images"
+description: >-
+  Shows what happened to the background pulls started by pre-pull-docker-images with "reports: true": per image
+  the result (pulled, failed or still running), the duration and the tail of the pull log, in the job log and in
+  the job summary. Add it as a step after the tests with "if: always()", and optionally once more right before the
+  tests to see whether the pulls finished while Java and the dependency caches were being set up. Never fails the
+  job unless "fail-on-error" is set. Use the same version of both actions.
+inputs:
+  fail-on-error:
+    description: 'Set to "true" to fail this step if any pull has failed (pulls that are still running are not failures).'
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Report on pre-pulled Docker images
+      shell: bash
+      env:
+        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}
+      run: |
+        dir="${RUNNER_TEMP:-/tmp}/pre-pull-docker-images-reports"
+        summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+        # Everything printed here is untrusted (docker/registry output): keep printable ASCII only, and prefix every
+        # log line so it can never start a workflow command ("::...") or close the summary's code fence.
+        ascii() { LC_ALL=C tr -c '\040-\176' '?'; }
+        quote() { LC_ALL=C tr -c '\n\040-\176' '?' | sed 's/^/| /'; }
+        tail_log() {
+          if [[ -s "$1" ]]; then tr '\r' '\n' < "$1" | tail -n 30 | tail -c 4096 | quote; else echo "| (no output)"; fi
+        }
+
+        if [[ ! -d "$dir" || -L "$dir" || ! -O "$dir" ]]; then
+          echo "No pre-pull report data - set 'reports: true' on the pre-pull-docker-images step"
+          exit 0
+        fi
+        { read -r format < "$dir/format"; } 2>/dev/null || format=
+        if [[ "$format" != 1 ]]; then
+          echo "::warning::Unsupported pre-pull report format - use the same version of both pre-pull actions"
+          exit 0
+        fi
+
+        shopt -s nullglob
+        entries=()
+        for meta in "$dir"/*.meta; do
+          id="${meta##*/}"
+          id="${id%.meta}"
+          [[ "$id" =~ ^[0-9a-f]{12}$ ]] || continue
+          { IFS=$'\t' read -r start image < "$meta"; } 2>/dev/null || continue
+          [[ "$start" =~ ^[0-9]+$ && -n "$image" ]] || continue
+          entries+=("$(printf '%s' "$image" | ascii)"$'\t'"$start"$'\t'"$id")
+        done
+        if ((${#entries[@]} == 0)); then
+          echo "No pre-pulled images recorded"
+          exit 0
+        fi
+        mapfile -t entries < <(printf '%s\n' "${entries[@]}" | LC_ALL=C sort)
+
+        now="$(date +%s)"
+        fence='```'
+        pulled=0 failed=0 running=0 unknown=0
+        rows="" logs=""
+        for entry in "${entries[@]}"; do
+          IFS=$'\t' read -r image start id <<< "$entry"
+          base="$dir/$id"
+          state=running
+          result="⏳ still running"
+          duration="running for $((now > start ? now - start : 0))s"
+          if [[ -f "$base.status" ]]; then
+            state=unknown
+            result="❓ unknown"
+            duration="-"
+            if { read -r rc end < "$base.status"; } 2>/dev/null && [[ "$rc" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ ]]; then
+              duration="$((end > start ? end - start : 0))s"
+              if [[ "$rc" == 0 ]]; then
+                state=pulled
+                result="✅ pulled"
+              else
+                state=failed
+                result="❌ failed (exit $rc)"
+              fi
+            fi
+          fi
+          case "$state" in
+            pulled) pulled=$((pulled + 1)) ;;
+            failed) failed=$((failed + 1)) ;;
+            running) running=$((running + 1)) ;;
+            *) unknown=$((unknown + 1)) ;;
+          esac
+
+          echo "::group::$result - $image ($duration)"
+          tail_log "$base.log"
+          echo "::endgroup::"
+
+          rows+="$(printf '| `%s` | %s | %s |' "$image" "$result" "$duration")"$'\n'
+          if [[ "$state" != pulled ]]; then
+            logs+=$'\n'"<details><summary><code>$image</code> - $result</summary>"$'\n\n'"$fence"$'\n'"$(tail_log "$base.log")"$'\n'"$fence"$'\n\n</details>\n'
+          fi
+        done
+
+        echo "Pre-pull report: $pulled pulled, $failed failed, $running still running, $unknown unknown"
+        {
+          printf '### Pre-pulled Docker images (report at %s UTC)\n\n' "$(date -u +%H:%M:%S)"
+          printf '| Image | Result | Duration |\n|---|---|---|\n%s' "$rows"
+          printf '%s' "$logs"
+        } >> "$summary"
+
+        if [[ "${FAIL_ON_ERROR,,}" == true && "$failed" -gt 0 ]]; then
+          echo "::error::$failed Docker image pre-pull(s) failed"
+          exit 1
+        fi
