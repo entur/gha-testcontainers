@@ -8,7 +8,7 @@ description: >-
   of truth. Call this action right after checkout - before the dependency-cache restore - so the download
   overlaps with dependency resolution/compilation instead of blocking whichever integration test first
   needs the image (Testcontainers otherwise pulls lazily, on demand, serially). If no images are found,
-  this action is a no-op.
+  this action is a no-op. Pull output is discarded unless "prepare-report" is enabled; see pre-pull-docker-images-report.
 inputs:
   dockerfile-paths:
     description: >-
@@ -26,6 +26,12 @@ inputs:
   registry-password:
     description: "Registry password or access token (optional)."
     required: false
+  prepare-report:
+    description: >-
+      Set to "true" to record the output, exit code and timing of every background pull under $RUNNER_TEMP, for the
+      pre-pull-docker-images-report action to show later in the job. Default "false": pull output is discarded.
+    required: false
+    default: "false"
 outputs:
   images:
     description: "Newline-separated list of the images that were pre-pulled (empty if none)."
@@ -110,6 +116,7 @@ runs:
         REGISTRY: ${{ inputs.registry }}
         REGISTRY_LOGIN: ${{ inputs.registry-login }}
         REGISTRY_PASSWORD: ${{ inputs.registry-password }}
+        PREPARE_REPORT: ${{ inputs.prepare-report }}
       run: |
         if [[ -n "$REGISTRY_LOGIN" && -n "$REGISTRY_PASSWORD" ]]; then
           echo "Logging in to ${REGISTRY:-docker.io}"
@@ -117,8 +124,38 @@ runs:
         else
           echo "No registry login."
         fi
+
+        # Reports live in a private runner-temp directory, never in the (untrusted) checkout, and file names are
+        # derived from a hash of the image, never from the image itself. Read by pre-pull-docker-images-report.
+        reports_dir=
+        if [[ "${PREPARE_REPORT,,}" == true ]]; then
+          dir="${RUNNER_TEMP:-/tmp}/pre-pull-docker-images-reports"
+          # mkdir -m only applies to a directory it creates, so tighten one left over from an earlier run
+          if mkdir -p -m 700 -- "$dir" && [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] && chmod 700 -- "$dir"; then
+            echo 1 > "$dir/format"
+            reports_dir="$dir"
+          else
+            echo "::warning::Cannot use '$dir' for pull reports - continuing without reports"
+          fi
+        fi
+
         while IFS= read -r image; do
-          echo "Pre-pulling $image in background"
-          setsid docker pull -- "$image" > /dev/null 2>&1 < /dev/null &
+          if [[ -n "$reports_dir" ]]; then
+            id="$(printf '%s' "$image" | sha256sum | cut -c1-12)"
+            base="$reports_dir/$id"
+            rm -f -- "$base.status" "$base.log"
+            printf '%s\t%s\n' "$(date +%s)" "$image" > "$base.meta"
+            echo "Pre-pulling $image in background (report $id)"
+            # image and path are passed as arguments, never interpolated into the script; $2.status appears atomically
+            # (unique temp name per wrapper, so pulls of the same image started twice cannot clobber each other)
+            setsid bash -c '
+              docker pull -- "$1" > "$2.log" 2>&1
+              rc=$?
+              printf "%s %s\n" "$rc" "$(date +%s)" > "$2.status.$$.tmp" && mv -f -- "$2.status.$$.tmp" "$2.status"
+            ' _ "$image" "$base" > /dev/null 2>&1 < /dev/null &
+          else
+            echo "Pre-pulling $image in background"
+            setsid docker pull -- "$image" > /dev/null 2>&1 < /dev/null &
+          fi
           disown
         done < "$IMAGES_FILE"

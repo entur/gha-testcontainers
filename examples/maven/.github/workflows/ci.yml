@@ -26,6 +26,8 @@ jobs:
           # Prefer a read-only pull token. For another registry, also set "registry: ghcr.io".
           # registry-login: ${{ secrets.REGISTRY_LOGIN }}
           # registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+          # Optional: record how each pull went, and show it with the report step at the end of the job.
+          # prepare-report: true
 
       # 2. ...while Java is set up and the Maven cache restored.
       - uses: actions/setup-java@v4
@@ -36,3 +38,7 @@ jobs:
 
       # 3. By the time the integration tests start, the images are (mostly) already local.
       - run: mvn -B verify
+
+      # Optional, with "prepare-report: true" above: result, duration and log tail of every pre-pull.
+      # - if: always()
+      #   uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images-report@v1
