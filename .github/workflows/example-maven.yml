@@ -31,8 +31,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-          cache: maven
-          cache-dependency-path: examples/maven/pom.xml
+      - name: Set up Maven cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('examples/maven/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
       - name: Maven verify (Testcontainers pulls its images on demand)
         working-directory: examples/maven
         run: |
@@ -57,8 +61,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-          cache: maven
-          cache-dependency-path: examples/maven/pom.xml
+      - name: Set up Maven cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('examples/maven/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
       - name: Report - did the pulls finish while Java and the cache were set up?
         uses: ./.github/actions/pre-pull-docker-images-report
       - name: Maven verify (images pre-pulled)
