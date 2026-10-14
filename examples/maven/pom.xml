@@ -8,7 +8,7 @@
 
 	<properties>
 		<!-- the library in the repository root; run "mvn install" there first while it is unreleased -->
-		<dockerfile-helper.version>1.0.1-SNAPSHOT</dockerfile-helper.version>
+		<dockerfile-helper.version>1.0.1</dockerfile-helper.version>
 		<junit.version>6.1.3</junit.version>
 		<maven.compiler.release>17</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
