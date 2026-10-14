@@ -1,6 +1,6 @@
 name: "Report on pre-pulled Docker images"
 description: >-
-  Shows what happened to the background pulls started by pre-pull-docker-images with "reports: true": per image
+  Shows what happened to the background pulls started by pre-pull-docker-images with "prepare-report: true": per image
   the result (pulled, failed or still running), the duration and the tail of the pull log, in the job log and in
   the job summary. Add it as a step after the tests with "if: always()", and optionally once more right before the
   tests to see whether the pulls finished while Java and the dependency caches were being set up. Never fails the
@@ -31,7 +31,7 @@ runs:
         }
 
         if [[ ! -d "$dir" || -L "$dir" || ! -O "$dir" ]]; then
-          echo "No pre-pull report data - set 'reports: true' on the pre-pull-docker-images step"
+          echo "No pre-pull report data - set 'prepare-report: true' on the pre-pull-docker-images step"
           exit 0
         fi
         { read -r format < "$dir/format"; } 2>/dev/null || format=

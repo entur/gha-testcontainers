@@ -8,7 +8,7 @@ description: >-
   of truth. Call this action right after checkout - before the dependency-cache restore - so the download
   overlaps with dependency resolution/compilation instead of blocking whichever integration test first
   needs the image (Testcontainers otherwise pulls lazily, on demand, serially). If no images are found,
-  this action is a no-op. Pull output is discarded unless "reports" is enabled; see pre-pull-docker-images-report.
+  this action is a no-op. Pull output is discarded unless "prepare-report" is enabled; see pre-pull-docker-images-report.
 inputs:
   dockerfile-paths:
     description: >-
@@ -26,7 +26,7 @@ inputs:
   registry-password:
     description: "Registry password or access token (optional)."
     required: false
-  reports:
+  prepare-report:
     description: >-
       Set to "true" to record the output, exit code and timing of every background pull under $RUNNER_TEMP, for the
       pre-pull-docker-images-report action to show later in the job. Default "false": pull output is discarded.
@@ -116,7 +116,7 @@ runs:
         REGISTRY: ${{ inputs.registry }}
         REGISTRY_LOGIN: ${{ inputs.registry-login }}
         REGISTRY_PASSWORD: ${{ inputs.registry-password }}
-        REPORTS: ${{ inputs.reports }}
+        PREPARE_REPORT: ${{ inputs.prepare-report }}
       run: |
         if [[ -n "$REGISTRY_LOGIN" && -n "$REGISTRY_PASSWORD" ]]; then
           echo "Logging in to ${REGISTRY:-docker.io}"
@@ -128,7 +128,7 @@ runs:
         # Reports live in a private runner-temp directory, never in the (untrusted) checkout, and file names are
         # derived from a hash of the image, never from the image itself. Read by pre-pull-docker-images-report.
         reports_dir=
-        if [[ "${REPORTS,,}" == true ]]; then
+        if [[ "${PREPARE_REPORT,,}" == true ]]; then
           dir="${RUNNER_TEMP:-/tmp}/pre-pull-docker-images-reports"
           if mkdir -p -m 700 -- "$dir" && [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]]; then
             echo 1 > "$dir/format"

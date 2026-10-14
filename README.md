@@ -71,17 +71,17 @@ or the equivalent for Gradle.
 | `registry`           | no       | Registry address to log in to (e.g. `ghcr.io`). Default `docker.io`.                         |
 | `registry-login`     | no       | Registry username. Login only happens if both login and password are set.                    |
 | `registry-password`  | no       | Registry password or access token.                                                           |
-| `reports`            | no       | `true` records each pull's output, exit code and duration for the [report action](#reports). Default `false`. |
+| `prepare-report`     | no       | `true` records each pull's output, exit code and duration for the [report action](#reports). Default `false`. |
 
 | Output   | Description                                          |
 |----------|------------------------------------------------------|
 | `images` | Newline-separated list of images that were pre-pulled. |
 
-Pulls run detached - they continue in the background after the step ends. Their output is discarded unless you enable [reports](#reports).
+Pulls run detached - they continue in the background after the step ends. Their output is discarded unless you set `prepare-report: true`, see [Reports](#reports).
 
 ### Reports
 Background pulls are silent: if one fails (typo in a tag, missing credentials, rate limit), Testcontainers just pulls the image
-itself later and nothing tells you the pre-pull was wasted. Set `reports: true` and add the `pre-pull-docker-images-report`
+itself later and nothing tells you the pre-pull was wasted. Set `prepare-report: true` and add the `pre-pull-docker-images-report`
 action to see, per image, whether it was pulled, failed or was still running, how long it took, and the tail of its log:
 
 ```yaml
@@ -89,7 +89,7 @@ action to see, per image, whether it was pulled, failed or was still running, ho
 - uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images@v1
   with:
     dockerfile-paths: src/test/resources/testcontainers
-    reports: true
+    prepare-report: true
 - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
   with:
     java-version: 25
@@ -171,7 +171,7 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
   so they can never be parsed as options.
 - The action does not write files into the checkout. Collected image lists are stored under `$RUNNER_TEMP`,
   and background pull output goes to `/dev/null`, so repository symlinks cannot redirect pull logs into runner files.
-  With `reports: true`, pull output instead goes to a `0700` directory under `$RUNNER_TEMP` (refused if it is a
+  With `prepare-report: true`, pull output instead goes to a `0700` directory under `$RUNNER_TEMP` (refused if it is a
   symlink or not owned by the runner user), in files named after a hash of the image, never after the image itself.
   The report action treats that output as untrusted: only printable ASCII is shown, every log line is prefixed so
   it cannot form a workflow command (`::...`) or close the summary's code fence, and only the tail is shown.

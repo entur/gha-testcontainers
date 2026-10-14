@@ -32,6 +32,21 @@ def image_id(image):
     return hashlib.sha256(image.encode()).hexdigest()[:12]
 
 
+class ActionWiringTest(unittest.TestCase):
+    """The script tests set environment variables directly; check that the action inputs feed them."""
+
+    def action(self, name):
+        return (Path(__file__).resolve().parents[1] / ".github/actions" / name / "action.yml").read_text()
+
+    def test_inputs_feed_the_script_environment(self):
+        pre_pull = self.action("pre-pull-docker-images")
+        self.assertRegex(pre_pull, r"(?m)^  prepare-report:\n(?:    .*\n)*?    default: \"false\"\n")
+        self.assertIn("        PREPARE_REPORT: ${{ inputs.prepare-report }}\n", pre_pull)
+        report = self.action("pre-pull-docker-images-report")
+        self.assertRegex(report, r"(?m)^  fail-on-error:\n(?:    .*\n)*?    default: \"false\"\n")
+        self.assertIn("        FAIL_ON_ERROR: ${{ inputs.fail-on-error }}\n", report)
+
+
 class PrePullActionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -243,7 +258,7 @@ printf '%s\n' "$*" >> "$FAKE_DOCKER_COMPLETIONS"
         victim.write_text("must stay unchanged\n")
         (self.workspace / "pre-pull-docker-images-reports").symlink_to(victim)
 
-        result = self.run_script(self.pull_script, {**self.env, "REPORTS": "True", "FAKE_DOCKER_FAIL": "nginx"})
+        result = self.run_script(self.pull_script, {**self.env, "PREPARE_REPORT": "True", "FAKE_DOCKER_FAIL": "nginx"})
         self.wait_for_statuses(3)
 
         self.assertEqual(result.stderr, "")
@@ -268,7 +283,7 @@ printf '%s\n' "$*" >> "$FAKE_DOCKER_COMPLETIONS"
     def test_reports_rerun_clears_the_previous_result_while_running(self):
         self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
         self.collect()
-        env = {**self.env, "REPORTS": "true"}
+        env = {**self.env, "PREPARE_REPORT": "true"}
         self.run_script(self.pull_script, env)
         self.wait_for_statuses(1)
 
@@ -285,8 +300,8 @@ printf '%s\n' "$*" >> "$FAKE_DOCKER_COMPLETIONS"
         self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
         self.collect()
         for invocation, value in enumerate(("", "false", "banana", "1", "yes"), start=1):
-            with self.subTest(reports=value):
-                result = self.run_script(self.pull_script, {**self.env, "REPORTS": value})
+            with self.subTest(prepare_report=value):
+                result = self.run_script(self.pull_script, {**self.env, "PREPARE_REPORT": value})
                 self.wait_for_pulls(invocation)
                 self.assertEqual(result.stdout, "No registry login.\nPre-pulling redis:7.2 in background\n")
                 self.assertEqual(list(self.runner_temp.iterdir()), [self.images_file])
@@ -298,7 +313,7 @@ printf '%s\n' "$*" >> "$FAKE_DOCKER_COMPLETIONS"
         elsewhere.mkdir()
         self.reports_dir.symlink_to(elsewhere)
 
-        result = self.run_script(self.pull_script, {**self.env, "REPORTS": "true"})
+        result = self.run_script(self.pull_script, {**self.env, "PREPARE_REPORT": "true"})
         self.wait_for_pulls(1)
 
         self.assertIn("::warning::Cannot use ", result.stdout)
@@ -374,7 +389,7 @@ class PrePullReportActionTest(unittest.TestCase):
     def test_no_data_notice_and_foreign_format_do_not_fail(self):
         result = self.report()
         self.assertEqual(result.returncode, 0)
-        self.assertIn("set 'reports: true'", result.stdout)
+        self.assertIn("set 'prepare-report: true'", result.stdout)
 
         self.reports_dir.mkdir()
         (self.reports_dir / "format").write_text("2\n")
