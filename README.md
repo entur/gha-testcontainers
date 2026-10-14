@@ -169,7 +169,7 @@ The action needs **no** `GITHUB_TOKEN` permissions and no secrets: pulling publi
   so they can never be parsed as options.
 - The action does not write files into the checkout. Collected image lists are stored under `$RUNNER_TEMP`,
   and background pull output goes to `/dev/null`, so repository symlinks cannot redirect pull logs into runner files.
-  With `prepare-report: true`, pull output instead goes to a `0700` directory under `$RUNNER_TEMP` (refused if it is a
+  With `prepare-report: true`, pull output instead goes to a directory under `$RUNNER_TEMP` (refused if it is a
   symlink or not owned by the runner user), in files named after a hash of the image, never after the image itself.
   The report action treats that output as untrusted: only printable ASCII is shown, every log line is prefixed so
   it cannot form a workflow command (`::...`) or close the summary's code fence, and only the tail is shown.
