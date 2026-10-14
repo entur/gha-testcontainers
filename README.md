@@ -90,8 +90,9 @@ action to see, per image, whether it was pulled, failed or was still running, ho
   with:
     dockerfile-paths: src/test/resources/testcontainers
     prepare-report: true
+# ...
 # your steps here, e.g. set up Java and restore dependency caches
-# optional: did the pulls finish by now? "still running" means the image may not be local yet when the tests start
+# ...
 - uses: entur/gha-testcontainers/.github/actions/pre-pull-docker-images-report@v1
 - run: mvn verify
 - if: always()
