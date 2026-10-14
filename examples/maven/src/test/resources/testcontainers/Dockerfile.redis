@@ -1,2 +1,2 @@
 # Never built - only the FROM line is used, by Dependabot, the pre-pull action and DockerfileImages.get("redis").
-FROM redis:7.2
+FROM redis:8.2
