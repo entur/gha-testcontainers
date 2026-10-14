@@ -306,6 +306,17 @@ printf '%s\n' "$*" >> "$FAKE_DOCKER_COMPLETIONS"
                 self.assertEqual(result.stdout, "No registry login.\nPre-pulling redis:7.2 in background\n")
                 self.assertEqual(list(self.runner_temp.iterdir()), [self.images_file])
 
+    def test_reports_tighten_the_permissions_of_an_existing_directory(self):
+        self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
+        self.collect()
+        self.reports_dir.mkdir()
+        self.reports_dir.chmod(0o755)
+
+        self.run_script(self.pull_script, {**self.env, "PREPARE_REPORT": "true"})
+        self.wait_for_statuses(1)
+
+        self.assertEqual(self.reports_dir.stat().st_mode & 0o777, 0o700)
+
     def test_reports_fall_back_to_discarding_output_if_the_directory_is_not_ours(self):
         self.dockerfile("Dockerfile.redis", "FROM redis:7.2\n")
         self.collect()

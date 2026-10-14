@@ -130,7 +130,8 @@ runs:
         reports_dir=
         if [[ "${PREPARE_REPORT,,}" == true ]]; then
           dir="${RUNNER_TEMP:-/tmp}/pre-pull-docker-images-reports"
-          if mkdir -p -m 700 -- "$dir" && [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]]; then
+          # mkdir -m only applies to a directory it creates, so tighten one left over from an earlier run
+          if mkdir -p -m 700 -- "$dir" && [[ -d "$dir" && ! -L "$dir" && -O "$dir" ]] && chmod 700 -- "$dir"; then
             echo 1 > "$dir/format"
             reports_dir="$dir"
           else
@@ -146,10 +147,11 @@ runs:
             printf '%s\t%s\n' "$(date +%s)" "$image" > "$base.meta"
             echo "Pre-pulling $image in background (report $id)"
             # image and path are passed as arguments, never interpolated into the script; $2.status appears atomically
+            # (unique temp name per wrapper, so pulls of the same image started twice cannot clobber each other)
             setsid bash -c '
               docker pull -- "$1" > "$2.log" 2>&1
               rc=$?
-              printf "%s %s\n" "$rc" "$(date +%s)" > "$2.status.tmp" && mv -f -- "$2.status.tmp" "$2.status"
+              printf "%s %s\n" "$rc" "$(date +%s)" > "$2.status.$$.tmp" && mv -f -- "$2.status.$$.tmp" "$2.status"
             ' _ "$image" "$base" > /dev/null 2>&1 < /dev/null &
           else
             echo "Pre-pulling $image in background"
