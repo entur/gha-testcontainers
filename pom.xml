@@ -4,7 +4,7 @@
 
 	<groupId>no.entur.testcontainers</groupId>
 	<artifactId>dockerfile-helper</artifactId>
-	<version>1.0.0-SNAPSHOT</version>
+	<version>1.0.2-SNAPSHOT</version>
 	<name>Dockerfile-helper</name>
 	<description>Resolve Docker image names (e.g. for Testcontainers) from the FROM line of Dockerfiles on the classpath.</description>
 	<url>https://github.com/entur/gha-testcontainers</url>

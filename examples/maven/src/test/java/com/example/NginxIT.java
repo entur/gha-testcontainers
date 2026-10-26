@@ -9,16 +9,18 @@ import java.net.http.HttpResponse;
 
 import no.entur.testcontainers.dockerfile.DockerfileImages;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.context.ImportTestcontainers;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-@Testcontainers
+@SpringBootTest
+// Spring starts the containers below, so the log levels in application.properties apply. The class is named
+// explicitly, otherwise all tests would share one cached Spring context and only the first one's containers.
+@ImportTestcontainers(NginxIT.class)
 class NginxIT {
 
 	// image comes from src/test/resources/testcontainers/Dockerfile.nginx
-	@Container
 	static GenericContainer<?> nginx = new GenericContainer<>(DockerImageName.parse(DockerfileImages.fromResource("testcontainers/Dockerfile.nginx"))).withExposedPorts(80);
 
 	@Test
