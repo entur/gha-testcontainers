@@ -1,0 +1,3 @@
+# Never built - only the FROM line is used, by Dependabot, the pre-pull action and DockerfileImages.
+# All the GCP emulators (Pub/Sub, Datastore, Firestore, Bigtable, Spanner) in one, large, image.
+FROM gcr.io/google.com/cloudsdktool/google-cloud-cli:590.0.1-emulators
