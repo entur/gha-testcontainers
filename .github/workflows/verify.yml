@@ -21,7 +21,7 @@ jobs:
         run: python3 tests/test_action.py
 
   validate-maven-build:
-    uses: entur/abt-gha-public/.github/workflows/maven-open-source-verify.yml@v2.0
+    uses: entur/abt-gha-public/.github/workflows/maven-open-source-verify.yml@v2
     permissions:
       contents: read
     # no secrets necessary
